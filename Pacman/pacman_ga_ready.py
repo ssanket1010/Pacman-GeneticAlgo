@@ -1,3 +1,10 @@
+# Pacman - GA-Ready Version
+# Changes from original:
+#   1. Blinky movement is no longer hardcoded — uses free-roaming AI with random direction changes
+#   2. Walls are no longer hardcoded — generated from a parameterized layout (seed-able for GA)
+#   3. Speed is randomized per game instance (pacman_speed, ghost_speed drawn from ranges)
+#   4. Ghost base class exposes a `set_genome_speed(dx, dy)` for future GA control of Blinky
+
 import pygame
 import random
 
