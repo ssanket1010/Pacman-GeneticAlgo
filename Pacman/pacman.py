@@ -1,580 +1,495 @@
-#Pacman in Python with PyGame
-#https://github.com/hbokmann/Pacman
-  
 import pygame
-  
-black = (0,0,0)
-white = (255,255,255)
-blue = (0,0,255)
-green = (0,255,0)
-red = (255,0,0)
-purple = (255,0,255)
-yellow   = ( 255, 255,   0)
+import random
 
-Trollicon=pygame.image.load('images/Trollman.png')
-pygame.display.set_icon(Trollicon)
+# ── Colours ──────────────────────────────────────────────────────────────────
+black  = (  0,   0,   0)
+white  = (255, 255, 255)
+blue   = (  0,   0, 255)
+green  = (  0, 255,   0)
+red    = (255,   0,   0)
+purple = (255,   0, 255)
+yellow = (255, 255,   0)
 
-#Add music
-pygame.mixer.init()
-pygame.mixer.music.load('pacman.mp3')
-pygame.mixer.music.play(-1, 0.0)
+# ── Speed configuration (randomised each game) ───────────────────────────────
+SPEED_OPTIONS = [15, 20, 25, 30]          # pixel increments per tick
 
-# This class represents the bar at the bottom that the player controls
+def random_speed():
+    """Pick a random step size from the allowed set."""
+    return random.choice(SPEED_OPTIONS)
+
+# ── Wall sprite ───────────────────────────────────────────────────────────────
 class Wall(pygame.sprite.Sprite):
-    # Constructor function
-    def __init__(self,x,y,width,height, color):
-        # Call the parent's constructor
-        pygame.sprite.Sprite.__init__(self)
-  
-        # Make a blue wall, of the size specified in the parameters
+    def __init__(self, x, y, width, height, color=blue):
+        super().__init__()
         self.image = pygame.Surface([width, height])
         self.image.fill(color)
-  
-        # Make our top-left corner the passed-in location.
         self.rect = self.image.get_rect()
-        self.rect.top = y
+        self.rect.top  = y
         self.rect.left = x
 
-# This creates all the walls in room 1
-def setupRoomOne(all_sprites_list):
-    # Make the walls. (x_pos, y_pos, width, height)
-    wall_list=pygame.sprite.RenderPlain()
-     
-    # This is a list of walls. Each is in the form [x, y, width, height]
-    walls = [ [0,0,6,600],
-              [0,0,600,6],
-              [0,600,606,6],
-              [600,0,6,606],
-              [300,0,6,66],
-              [60,60,186,6],
-              [360,60,186,6],
-              [60,120,66,6],
-              [60,120,6,126],
-              [180,120,246,6],
-              [300,120,6,66],
-              [480,120,66,6],
-              [540,120,6,126],
-              [120,180,126,6],
-              [120,180,6,126],
-              [360,180,126,6],
-              [480,180,6,126],
-              [180,240,6,126],
-              [180,360,246,6],
-              [420,240,6,126],
-              [240,240,42,6],
-              [324,240,42,6],
-              [240,240,6,66],
-              [240,300,126,6],
-              [360,240,6,66],
-              [0,300,66,6],
-              [540,300,66,6],
-              [60,360,66,6],
-              [60,360,6,186],
-              [480,360,66,6],
-              [540,360,6,186],
-              [120,420,366,6],
-              [120,420,6,66],
-              [480,420,6,66],
-              [180,480,246,6],
-              [300,480,6,66],
-              [120,540,126,6],
-              [360,540,126,6]
-            ]
-     
-    # Loop through the list. Create the wall, add it to the list
-    for item in walls:
-        wall=Wall(item[0],item[1],item[2],item[3],blue)
+# ── Maze generation ───────────────────────────────────────────────────────────
+# Wall layout is expressed as a list of (x, y, w, h) tuples.
+# `generate_wall_layout` accepts a seed so the GA can reproduce any maze.
+# The border is always fixed; interior walls are drawn from a seeded template
+# that can later be parameterised by the GA genome.
+
+BORDER_WALLS = [
+    (0,   0,   6,   600),   # left
+    (0,   0,   600, 6  ),   # top
+    (0,   600, 606, 6  ),   # bottom
+    (600, 0,   6,   606),   # right
+]
+
+# Interior walls expressed as named segments — each can be toggled by the GA
+INTERIOR_SEGMENTS = {
+    "top_center_divider":    (300, 0,   6,  66),
+    "top_left_shelf":        (60,  60,  186, 6),
+    "top_right_shelf":       (360, 60,  186, 6),
+    "left_upper_corner_h":   (60,  120, 66,  6),
+    "left_upper_corner_v":   (60,  120, 6,   126),
+    "center_top_h":          (180, 120, 246, 6),
+    "center_top_divider_v":  (300, 120, 6,  66),
+    "right_upper_corner_h":  (480, 120, 66,  6),
+    "right_upper_corner_v":  (540, 120, 6,   126),
+    "left_mid_upper_h":      (120, 180, 126, 6),
+    "left_mid_upper_v":      (120, 180, 6,   126),
+    "right_mid_upper_h":     (360, 180, 126, 6),
+    "right_mid_upper_v":     (480, 180, 6,   126),
+    "left_inner_v":          (180, 240, 6,   126),
+    "mid_bottom_h":          (180, 360, 246, 6),
+    "right_inner_v":         (420, 240, 6,   126),
+    "center_left_h":         (240, 240, 42,  6),
+    "center_right_h":        (324, 240, 42,  6),
+    "center_left_v":         (240, 240, 6,   66),
+    "center_mid_h":          (240, 300, 126, 6),
+    "center_right_v":        (360, 240, 6,   66),
+    "left_side_h":           (0,   300, 66,  6),
+    "right_side_h":          (540, 300, 66,  6),
+    "lower_left_h":          (60,  360, 66,  6),
+    "lower_left_v":          (60,  360, 6,   186),
+    "lower_right_h":         (480, 360, 66,  6),
+    "lower_right_v":         (540, 360, 6,   186),
+    "lower_inner_h":         (120, 420, 366, 6),
+    "lower_inner_left_v":    (120, 420, 6,   66),
+    "lower_inner_right_v":   (480, 420, 6,   66),
+    "bottom_inner_h":        (180, 480, 246, 6),
+    "bottom_center_v":       (300, 480, 6,   66),
+    "bottom_left_h":         (120, 540, 126, 6),
+    "bottom_right_h":        (360, 540, 126, 6),
+}
+
+def generate_wall_layout(seed=None, drop_probability=0.0):
+    """
+    Return a list of (x, y, w, h) wall tuples.
+
+    seed            – random seed for reproducibility (GA can pass genome index)
+    drop_probability– probability [0,1] of omitting any interior segment (0 = classic maze)
+    """
+    rng = random.Random(seed)
+    walls = list(BORDER_WALLS)
+    for seg in INTERIOR_SEGMENTS.values():
+        if rng.random() >= drop_probability:
+            walls.append(seg)
+    return walls
+
+
+def setup_walls(all_sprites_list, seed=None, drop_probability=0.0):
+    wall_list = pygame.sprite.RenderPlain()
+    for (x, y, w, h) in generate_wall_layout(seed, drop_probability):
+        wall = Wall(x, y, w, h)
         wall_list.add(wall)
         all_sprites_list.add(wall)
-         
-    # return our new list
     return wall_list
 
-def setupGate(all_sprites_list):
-      gate = pygame.sprite.RenderPlain()
-      gate.add(Wall(282,242,42,2,white))
-      all_sprites_list.add(gate)
-      return gate
 
-# This class represents the ball        
-# It derives from the "Sprite" class in Pygame
+def setup_gate(all_sprites_list):
+    gate = pygame.sprite.RenderPlain()
+    gate.add(Wall(282, 242, 42, 2, white))
+    all_sprites_list.add(gate)
+    return gate
+
+
+# ── Pellet ────────────────────────────────────────────────────────────────────
 class Block(pygame.sprite.Sprite):
-     
-    # Constructor. Pass in the color of the block, 
-    # and its x and y position
     def __init__(self, color, width, height):
-        # Call the parent class (Sprite) constructor
-        pygame.sprite.Sprite.__init__(self) 
- 
-        # Create an image of the block, and fill it with a color.
-        # This could also be an image loaded from the disk.
+        super().__init__()
         self.image = pygame.Surface([width, height])
         self.image.fill(white)
         self.image.set_colorkey(white)
-        pygame.draw.ellipse(self.image,color,[0,0,width,height])
- 
-        # Fetch the rectangle object that has the dimensions of the image
-        # image.
-        # Update the position of this object by setting the values 
-        # of rect.x and rect.y
-        self.rect = self.image.get_rect() 
-
-# This class represents the bar at the bottom that the player controls
-class Player(pygame.sprite.Sprite):
-  
-    # Set speed vector
-    change_x=0
-    change_y=0
-  
-    # Constructor function
-    def __init__(self,x,y, filename):
-        # Call the parent's constructor
-        pygame.sprite.Sprite.__init__(self)
-   
-        # Set height, width
-        self.image = pygame.image.load(filename).convert()
-  
-        # Make our top-left corner the passed-in location.
+        pygame.draw.ellipse(self.image, color, [0, 0, width, height])
         self.rect = self.image.get_rect()
-        self.rect.top = y
+
+
+# ── Player (Pacman) ───────────────────────────────────────────────────────────
+class Player(pygame.sprite.Sprite):
+    change_x = 0
+    change_y = 0
+
+    def __init__(self, x, y, filename):
+        super().__init__()
+        self.image = pygame.image.load(filename).convert()
+        self.rect  = self.image.get_rect()
+        self.rect.top  = y
         self.rect.left = x
         self.prev_x = x
         self.prev_y = y
 
-    # Clear the speed of the player
     def prevdirection(self):
         self.prev_x = self.change_x
         self.prev_y = self.change_y
 
-    # Change the speed of the player
-    def changespeed(self,x,y):
-        self.change_x+=x
-        self.change_y+=y
-          
-    # Find a new position for the player
-    def update(self,walls,gate):
-        # Get the old position, in case we need to go back to it
-        
-        old_x=self.rect.left
-        new_x=old_x+self.change_x
-        prev_x=old_x+self.prev_x
-        self.rect.left = new_x
-        
-        old_y=self.rect.top
-        new_y=old_y+self.change_y
-        prev_y=old_y+self.prev_y
+    def changespeed(self, x, y):
+        self.change_x += x
+        self.change_y += y
 
-        # Did this update cause us to hit a wall?
-        x_collide = pygame.sprite.spritecollide(self, walls, False)
-        if x_collide:
-            # Whoops, hit a wall. Go back to the old position
-            self.rect.left=old_x
-            # self.rect.top=prev_y
-            # y_collide = pygame.sprite.spritecollide(self, walls, False)
-            # if y_collide:
-            #     # Whoops, hit a wall. Go back to the old position
-            #     self.rect.top=old_y
-            #     print('a')
+    def update(self, walls, gate):
+        old_x = self.rect.left
+        self.rect.left = old_x + self.change_x
+        if pygame.sprite.spritecollide(self, walls, False):
+            self.rect.left = old_x
         else:
+            old_y = self.rect.top
+            self.rect.top = old_y + self.change_y
+            if pygame.sprite.spritecollide(self, walls, False):
+                self.rect.top = old_y
 
-            self.rect.top = new_y
+        if gate:
+            if pygame.sprite.spritecollide(self, gate, False):
+                self.rect.left = old_x
+                self.rect.top  = old_y
 
-            # Did this update cause us to hit a wall?
-            y_collide = pygame.sprite.spritecollide(self, walls, False)
-            if y_collide:
-                # Whoops, hit a wall. Go back to the old position
-                self.rect.top=old_y
-                # self.rect.left=prev_x
-                # x_collide = pygame.sprite.spritecollide(self, walls, False)
-                # if x_collide:
-                #     # Whoops, hit a wall. Go back to the old position
-                #     self.rect.left=old_x
-                #     print('b')
 
-        if gate != False:
-          gate_hit = pygame.sprite.spritecollide(self, gate, False)
-          if gate_hit:
-            self.rect.left=old_x
-            self.rect.top=old_y
-
-#Inheritime Player klassist
+# ── Ghost base (scripted path — Pinky, Inky, Clyde) ──────────────────────────
 class Ghost(Player):
-    # Change the speed of the ghost
-    def changespeed(self,list,ghost,turn,steps,l):
-      try:
-        z=list[turn][2]
-        if steps < z:
-          self.change_x=list[turn][0]
-          self.change_y=list[turn][1]
-          steps+=1
-        else:
-          if turn < l:
-            turn+=1
-          elif ghost == "clyde":
-            turn = 2
-          else:
-            turn = 0
-          self.change_x=list[turn][0]
-          self.change_y=list[turn][1]
-          steps = 0
-        return [turn,steps]
-      except IndexError:
-         return [0,0]
+    """Scripted ghost: follows a predefined direction list."""
 
+    def changespeed(self, direction_list, ghost_tag, turn, steps, max_turn):
+        try:
+            z = direction_list[turn][2]
+            if steps < z:
+                self.change_x = direction_list[turn][0]
+                self.change_y = direction_list[turn][1]
+                steps += 1
+            else:
+                if turn < max_turn:
+                    turn += 1
+                elif ghost_tag == "clyde":
+                    turn = 2
+                else:
+                    turn = 0
+                self.change_x = direction_list[turn][0]
+                self.change_y = direction_list[turn][1]
+                steps = 0
+            return [turn, steps]
+        except IndexError:
+            return [0, 0]
+
+
+# ── Blinky: free-roaming AI ghost (NO hardcoded path) ────────────────────────
+class BlinkyAI(Player):
+    """
+    Blinky moves freely around the maze without a scripted direction list.
+    Direction is chosen randomly when Blinky hits a wall or every
+    `direction_ttl` ticks — whichever comes first.
+
+    For GA integration: call `set_genome_speed(dx, dy)` to override the
+    AI choice with a genome-prescribed direction.
+    """
+
+    DIRECTIONS = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+
+    def __init__(self, x, y, filename, speed, rng_seed=None):
+        super().__init__(x, y, filename)
+        self.speed        = speed
+        self._rng         = random.Random(rng_seed)
+        self.direction_ttl = 0          # ticks until forced re-roll
+        self._genome_dx   = None        # set by GA; None → use AI
+        self._genome_dy   = None
+        self._pick_random_direction()
+
+    # ── GA hook ───────────────────────────────────────────────────────────────
+    def set_genome_speed(self, dx, dy):
+        """Override autonomous AI with a GA-prescribed direction this tick."""
+        self._genome_dx = dx
+        self._genome_dy = dy
+
+    def clear_genome_speed(self):
+        self._genome_dx = None
+        self._genome_dy = None
+
+    # ── Internal helpers ──────────────────────────────────────────────────────
+    def _pick_random_direction(self):
+        dx, dy = self._rng.choice(self.DIRECTIONS)
+        self.change_x = dx * self.speed
+        self.change_y = dy * self.speed
+        self.direction_ttl = self._rng.randint(5, 20)   # hold direction 5-20 ticks
+
+    def update(self, walls, gate):
+        # Apply genome override if set
+        if self._genome_dx is not None:
+            self.change_x = self._genome_dx
+            self.change_y = self._genome_dy
+
+        old_x = self.rect.left
+        old_y = self.rect.top
+
+        self.rect.left += self.change_x
+        x_hit = pygame.sprite.spritecollide(self, walls, False)
+        if x_hit:
+            self.rect.left = old_x
+            self._pick_random_direction()   # bounce: pick new dir
+            return
+
+        self.rect.top += self.change_y
+        y_hit = pygame.sprite.spritecollide(self, walls, False)
+        if y_hit:
+            self.rect.top = old_y
+            self._pick_random_direction()
+            return
+
+        # Periodic random re-direction (keeps movement natural)
+        self.direction_ttl -= 1
+        if self.direction_ttl <= 0:
+            self._pick_random_direction()
+
+
+# ── Scripted direction tables (Pinky, Inky, Clyde unchanged) ─────────────────
 Pinky_directions = [
-[0,-30,4],
-[15,0,9],
-[0,15,11],
-[-15,0,23],
-[0,15,7],
-[15,0,3],
-[0,-15,3],
-[15,0,19],
-[0,15,3],
-[15,0,3],
-[0,15,3],
-[15,0,3],
-[0,-15,15],
-[-15,0,7],
-[0,15,3],
-[-15,0,19],
-[0,-15,11],
-[15,0,9]
+    [0,-30,4],[15,0,9],[0,15,11],[-15,0,23],[0,15,7],[15,0,3],[0,-15,3],
+    [15,0,19],[0,15,3],[15,0,3],[0,15,3],[15,0,3],[0,-15,15],[-15,0,7],
+    [0,15,3],[-15,0,19],[0,-15,11],[15,0,9],
 ]
-
-Blinky_directions = [
-[0,-15,4],
-[15,0,9],
-[0,15,11],
-[15,0,3],
-[0,15,7],
-[-15,0,11],
-[0,15,3],
-[15,0,15],
-[0,-15,15],
-[15,0,3],
-[0,-15,11],
-[-15,0,3],
-[0,-15,11],
-[-15,0,3],
-[0,-15,3],
-[-15,0,7],
-[0,-15,3],
-[15,0,15],
-[0,15,15],
-[-15,0,3],
-[0,15,3],
-[-15,0,3],
-[0,-15,7],
-[-15,0,3],
-[0,15,7],
-[-15,0,11],
-[0,-15,7],
-[15,0,5]
-]
+Blinky_directions = []   # kept empty — Blinky is now BlinkyAI
 
 Inky_directions = [
-[30,0,2],
-[0,-15,4],
-[15,0,10],
-[0,15,7],
-[15,0,3],
-[0,-15,3],
-[15,0,3],
-[0,-15,15],
-[-15,0,15],
-[0,15,3],
-[15,0,15],
-[0,15,11],
-[-15,0,3],
-[0,-15,7],
-[-15,0,11],
-[0,15,3],
-[-15,0,11],
-[0,15,7],
-[-15,0,3],
-[0,-15,3],
-[-15,0,3],
-[0,-15,15],
-[15,0,15],
-[0,15,3],
-[-15,0,15],
-[0,15,11],
-[15,0,3],
-[0,-15,11],
-[15,0,11],
-[0,15,3],
-[15,0,1],
+    [30,0,2],[0,-15,4],[15,0,10],[0,15,7],[15,0,3],[0,-15,3],[15,0,3],
+    [0,-15,15],[-15,0,15],[0,15,3],[15,0,15],[0,15,11],[-15,0,3],[0,-15,7],
+    [-15,0,11],[0,15,3],[-15,0,11],[0,15,7],[-15,0,3],[0,-15,3],[-15,0,3],
+    [0,-15,15],[15,0,15],[0,15,3],[-15,0,15],[0,15,11],[15,0,3],[0,-15,11],
+    [15,0,11],[0,15,3],[15,0,1],
 ]
-
 Clyde_directions = [
-[-30,0,2],
-[0,-15,4],
-[15,0,5],
-[0,15,7],
-[-15,0,11],
-[0,-15,7],
-[-15,0,3],
-[0,15,7],
-[-15,0,7],
-[0,15,15],
-[15,0,15],
-[0,-15,3],
-[-15,0,11],
-[0,-15,7],
-[15,0,3],
-[0,-15,11],
-[15,0,9],
+    [-30,0,2],[0,-15,4],[15,0,5],[0,15,7],[-15,0,11],[0,-15,7],[-15,0,3],
+    [0,15,7],[-15,0,7],[0,15,15],[15,0,15],[0,-15,3],[-15,0,11],[0,-15,7],
+    [15,0,3],[0,-15,11],[15,0,9],
 ]
 
-pl = len(Pinky_directions)-1
-bl = len(Blinky_directions)-1
-il = len(Inky_directions)-1
-cl = len(Clyde_directions)-1
+pl = len(Pinky_directions) - 1
+il = len(Inky_directions)  - 1
+cl = len(Clyde_directions) - 1
 
-# Call this function so the Pygame library can initialize itself
+
+# ── Pygame init ───────────────────────────────────────────────────────────────
 pygame.init()
-  
-# Create an 606x606 sized screen
 screen = pygame.display.set_mode([606, 606])
-
-# This is a list of 'sprites.' Each block in the program is
-# added to this list. The list is managed by a class called 'RenderPlain.'
-
-
-# Set the title of the window
-pygame.display.set_caption('Pacman')
-
-# Create a surface we can draw on
-background = pygame.Surface(screen.get_size())
-
-# Used for converting color maps and such
-background = background.convert()
-  
-# Fill the screen with a black background
+pygame.display.set_caption('Pacman — GA Ready')
+background = pygame.Surface(screen.get_size()).convert()
 background.fill(black)
-
-
-
 clock = pygame.time.Clock()
+font  = pygame.font.Font("freesansbold.ttf", 24)
 
-pygame.font.init()
-font = pygame.font.Font("freesansbold.ttf", 24)
-
-#default locations for Pacman and monstas
-w = 303-16 #Width
-p_h = (7*60)+19 #Pacman height
-m_h = (4*60)+19 #Monster height
-b_h = (3*60)+19 #Binky height
-i_w = 303-16-32 #Inky width
-c_w = 303+(32-16) #Clyde width
-
-def startGame():
-
-  all_sprites_list = pygame.sprite.RenderPlain()
-
-  block_list = pygame.sprite.RenderPlain()
-
-  monsta_list = pygame.sprite.RenderPlain()
-
-  pacman_collide = pygame.sprite.RenderPlain()
-
-  wall_list = setupRoomOne(all_sprites_list)
-
-  gate = setupGate(all_sprites_list)
+# Default spawn positions
+w   = 303 - 16
+p_h = (7 * 60) + 19
+m_h = (4 * 60) + 19
+b_h = (3 * 60) + 19
+i_w = 303 - 16 - 32
+c_w = 303 + (32 - 16)
 
 
-  p_turn = 0
-  p_steps = 0
+# ── Main game function ────────────────────────────────────────────────────────
+def startGame(maze_seed=None, maze_drop_prob=0.0, speed_seed=None):
+    """
+    maze_seed       – seed for wall layout (None = classic maze)
+    maze_drop_prob  – fraction of interior walls to randomly omit  [0..1]
+    speed_seed      – seed for randomised speeds (None = fresh random)
 
-  b_turn = 0
-  b_steps = 0
+    GA usage example:
+        startGame(maze_seed=42, maze_drop_prob=0.2, speed_seed=7)
+    """
+    speed_rng = random.Random(speed_seed)
 
-  i_turn = 0
-  i_steps = 0
+    # Randomised speeds (drawn once per game instance)
+    pacman_speed = speed_rng.choice(SPEED_OPTIONS)
+    ghost_speed  = speed_rng.choice(SPEED_OPTIONS)
+    print(f"[GA] pacman_speed={pacman_speed}  ghost_speed={ghost_speed}  "
+          f"maze_seed={maze_seed}  drop_prob={maze_drop_prob}")
 
-  c_turn = 0
-  c_steps = 0
+    all_sprites_list = pygame.sprite.RenderPlain()
+    block_list       = pygame.sprite.RenderPlain()
+    monsta_list      = pygame.sprite.RenderPlain()
+    pacman_collide   = pygame.sprite.RenderPlain()
 
+    wall_list = setup_walls(all_sprites_list, seed=maze_seed,
+                            drop_probability=maze_drop_prob)
+    gate      = setup_gate(all_sprites_list)
 
-  # Create the player paddle object
-  Pacman = Player( w, p_h, "images/Trollman.png" )
-  all_sprites_list.add(Pacman)
-  pacman_collide.add(Pacman)
-   
-  Blinky=Ghost( w, b_h, "images/Blinky.png" )
-  monsta_list.add(Blinky)
-  all_sprites_list.add(Blinky)
+    p_turn = b_turn = i_turn = c_turn = 0
+    p_steps = b_steps = i_steps = c_steps = 0
 
-  Pinky=Ghost( w, m_h, "images/Pinky.png" )
-  monsta_list.add(Pinky)
-  all_sprites_list.add(Pinky)
-   
-  Inky=Ghost( i_w, m_h, "images/Inky.png" )
-  monsta_list.add(Inky)
-  all_sprites_list.add(Inky)
-   
-  Clyde=Ghost( c_w, m_h, "images/Clyde.png" )
-  monsta_list.add(Clyde)
-  all_sprites_list.add(Clyde)
+    # ── Sprites ───────────────────────────────────────────────────────────────
+    Pacman = Player(w, p_h, "images/Trollman.png")
+    all_sprites_list.add(Pacman)
+    pacman_collide.add(Pacman)
 
-  # Draw the grid
-  for row in range(19):
-      for column in range(19):
-          if (row == 7 or row == 8) and (column == 8 or column == 9 or column == 10):
-              continue
-          else:
+    # Blinky: free-roaming AI (GA can call set_genome_speed each tick)
+    Blinky = BlinkyAI(w, b_h, "images/Blinky.png",
+                      speed=ghost_speed, rng_seed=speed_seed)
+    monsta_list.add(Blinky)
+    all_sprites_list.add(Blinky)
+
+    # Scripted ghosts with randomised step sizes
+    def scale_dirs(directions, new_speed):
+        """Re-scale direction magnitudes to match the chosen ghost_speed."""
+        scaled = []
+        for d in directions:
+            orig_mag = max(abs(d[0]), abs(d[1]))
+            if orig_mag == 0:
+                scaled.append(d)
+                continue
+            factor = new_speed / orig_mag
+            scaled.append([int(d[0] * factor), int(d[1] * factor), d[2]])
+        return scaled
+
+    Pinky = Ghost(w,   m_h, "images/Pinky.png")
+    Inky  = Ghost(i_w, m_h, "images/Inky.png")
+    Clyde = Ghost(c_w, m_h, "images/Clyde.png")
+    for g in (Pinky, Inky, Clyde):
+        monsta_list.add(g)
+        all_sprites_list.add(g)
+
+    scaled_pinky = scale_dirs(Pinky_directions, ghost_speed)
+    scaled_inky  = scale_dirs(Inky_directions,  ghost_speed)
+    scaled_clyde = scale_dirs(Clyde_directions, ghost_speed)
+
+    # ── Pellets ───────────────────────────────────────────────────────────────
+    for row in range(19):
+        for column in range(19):
+            if (row in (7, 8)) and (column in (8, 9, 10)):
+                continue
             block = Block(yellow, 4, 4)
+            block.rect.x = (30 * column + 6) + 26
+            block.rect.y = (30 * row   + 6) + 26
+            if (pygame.sprite.spritecollide(block, wall_list, False) or
+                    pygame.sprite.spritecollide(block, pacman_collide, False)):
+                continue
+            block_list.add(block)
+            all_sprites_list.add(block)
 
-            # Set a random location for the block
-            block.rect.x = (30*column+6)+26
-            block.rect.y = (30*row+6)+26
+    total_pellets = len(block_list)
+    score = 0
+    done  = False
 
-            b_collide = pygame.sprite.spritecollide(block, wall_list, False)
-            p_collide = pygame.sprite.spritecollide(block, pacman_collide, False)
-            if b_collide:
-              continue
-            elif p_collide:
-              continue
-            else:
-              # Add the block to the list of objects
-              block_list.add(block)
-              all_sprites_list.add(block)
+    # ── Game loop ─────────────────────────────────────────────────────────────
+    while not done:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                done = True
 
-  bll = len(block_list)
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_LEFT:  Pacman.changespeed(-pacman_speed, 0)
+                if event.key == pygame.K_RIGHT: Pacman.changespeed( pacman_speed, 0)
+                if event.key == pygame.K_UP:    Pacman.changespeed(0, -pacman_speed)
+                if event.key == pygame.K_DOWN:  Pacman.changespeed(0,  pacman_speed)
 
-  score = 0
+            if event.type == pygame.KEYUP:
+                if event.key == pygame.K_LEFT:  Pacman.changespeed( pacman_speed, 0)
+                if event.key == pygame.K_RIGHT: Pacman.changespeed(-pacman_speed, 0)
+                if event.key == pygame.K_UP:    Pacman.changespeed(0,  pacman_speed)
+                if event.key == pygame.K_DOWN:  Pacman.changespeed(0, -pacman_speed)
 
-  done = False
+        # ── Update ────────────────────────────────────────────────────────────
+        Pacman.update(wall_list, gate)
 
-  i = 0
+        # Blinky: autonomous AI (no scripted path)
+        # GA hook: insert  Blinky.set_genome_speed(dx, dy)  here per tick
+        Blinky.update(wall_list, False)
 
-  while done == False:
-      # ALL EVENT PROCESSING SHOULD GO BELOW THIS COMMENT
-      for event in pygame.event.get():
-          if event.type == pygame.QUIT:
-              done=True
+        # Scripted ghosts
+        returned = Pinky.changespeed(scaled_pinky, False, p_turn, p_steps, pl)
+        p_turn, p_steps = returned
+        Pinky.update(wall_list, False)
 
-          if event.type == pygame.KEYDOWN:
-              if event.key == pygame.K_LEFT:
-                  Pacman.changespeed(-30,0)
-              if event.key == pygame.K_RIGHT:
-                  Pacman.changespeed(30,0)
-              if event.key == pygame.K_UP:
-                  Pacman.changespeed(0,-30)
-              if event.key == pygame.K_DOWN:
-                  Pacman.changespeed(0,30)
+        returned = Inky.changespeed(scaled_inky, False, i_turn, i_steps, il)
+        i_turn, i_steps = returned
+        Inky.update(wall_list, False)
 
-          if event.type == pygame.KEYUP:
-              if event.key == pygame.K_LEFT:
-                  Pacman.changespeed(30,0)
-              if event.key == pygame.K_RIGHT:
-                  Pacman.changespeed(-30,0)
-              if event.key == pygame.K_UP:
-                  Pacman.changespeed(0,30)
-              if event.key == pygame.K_DOWN:
-                  Pacman.changespeed(0,-30)
-          
-      # ALL EVENT PROCESSING SHOULD GO ABOVE THIS COMMENT
-   
-      # ALL GAME LOGIC SHOULD GO BELOW THIS COMMENT
-      Pacman.update(wall_list,gate)
+        returned = Clyde.changespeed(scaled_clyde, "clyde", c_turn, c_steps, cl)
+        c_turn, c_steps = returned
+        Clyde.update(wall_list, False)
 
-      returned = Pinky.changespeed(Pinky_directions,False,p_turn,p_steps,pl)
-      p_turn = returned[0]
-      p_steps = returned[1]
-      Pinky.changespeed(Pinky_directions,False,p_turn,p_steps,pl)
-      Pinky.update(wall_list,False)
+        # Pellet collection
+        hits = pygame.sprite.spritecollide(Pacman, block_list, True)
+        score += len(hits)
 
-      returned = Blinky.changespeed(Blinky_directions,False,b_turn,b_steps,bl)
-      b_turn = returned[0]
-      b_steps = returned[1]
-      Blinky.changespeed(Blinky_directions,False,b_turn,b_steps,bl)
-      Blinky.update(wall_list,False)
+        # ── Draw ──────────────────────────────────────────────────────────────
+        screen.fill(black)
+        wall_list.draw(screen)
+        gate.draw(screen)
+        all_sprites_list.draw(screen)
+        monsta_list.draw(screen)
 
-      returned = Inky.changespeed(Inky_directions,False,i_turn,i_steps,il)
-      i_turn = returned[0]
-      i_steps = returned[1]
-      Inky.changespeed(Inky_directions,False,i_turn,i_steps,il)
-      Inky.update(wall_list,False)
+        text = font.render(f"Score: {score}/{total_pellets}", True, red)
+        screen.blit(text, [10, 10])
+        speed_text = font.render(
+            f"P:{pacman_speed}px  G:{ghost_speed}px", True, white)
+        screen.blit(speed_text, [10, 580])
 
-      returned = Clyde.changespeed(Clyde_directions,"clyde",c_turn,c_steps,cl)
-      c_turn = returned[0]
-      c_steps = returned[1]
-      Clyde.changespeed(Clyde_directions,"clyde",c_turn,c_steps,cl)
-      Clyde.update(wall_list,False)
+        if score == total_pellets:
+            doNext("Congratulations, you won!", 145,
+                   all_sprites_list, block_list, monsta_list,
+                   pacman_collide, wall_list, gate, maze_seed,
+                   maze_drop_prob, speed_seed)
 
-      # See if the Pacman block has collided with anything.
-      blocks_hit_list = pygame.sprite.spritecollide(Pacman, block_list, True)
-       
-      # Check the list of collisions.
-      if len(blocks_hit_list) > 0:
-          score +=len(blocks_hit_list)
-      
-      # ALL GAME LOGIC SHOULD GO ABOVE THIS COMMENT
-   
-      # ALL CODE TO DRAW SHOULD GO BELOW THIS COMMENT
-      screen.fill(black)
-        
-      wall_list.draw(screen)
-      gate.draw(screen)
-      all_sprites_list.draw(screen)
-      monsta_list.draw(screen)
+        if pygame.sprite.spritecollide(Pacman, monsta_list, False):
+            doNext("Game Over", 235,
+                   all_sprites_list, block_list, monsta_list,
+                   pacman_collide, wall_list, gate, maze_seed,
+                   maze_drop_prob, speed_seed)
 
-      text=font.render("Score: "+str(score)+"/"+str(bll), True, red)
-      screen.blit(text, [10, 10])
+        pygame.display.flip()
+        clock.tick(10)
 
-      if score == bll:
-        doNext("Congratulations, you won!",145,all_sprites_list,block_list,monsta_list,pacman_collide,wall_list,gate)
 
-      monsta_hit_list = pygame.sprite.spritecollide(Pacman, monsta_list, False)
+# ── End screen ────────────────────────────────────────────────────────────────
+def doNext(message, left,
+           all_sprites_list, block_list, monsta_list, pacman_collide,
+           wall_list, gate, maze_seed, maze_drop_prob, speed_seed):
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); return
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit(); return
+                if event.key == pygame.K_RETURN:
+                    for grp in (all_sprites_list, block_list, monsta_list,
+                                pacman_collide, wall_list, gate):
+                        del grp
+                    # New random speed seed each retry so speeds re-randomise
+                    startGame(maze_seed=maze_seed,
+                              maze_drop_prob=maze_drop_prob,
+                              speed_seed=random.randint(0, 9999))
+                    return
 
-      if monsta_hit_list:
-        doNext("Game Over",235,all_sprites_list,block_list,monsta_list,pacman_collide,wall_list,gate)
+        w_surf = pygame.Surface((400, 200))
+        w_surf.set_alpha(10)
+        w_surf.fill((128, 128, 128))
+        screen.blit(w_surf, (100, 200))
 
-      # ALL CODE TO DRAW SHOULD GO ABOVE THIS COMMENT
-      
-      pygame.display.flip()
-    
-      clock.tick(10)
+        screen.blit(font.render(message, True, white),  [left, 233])
+        screen.blit(font.render("Press ENTER to play again.", True, white), [135, 303])
+        screen.blit(font.render("Press ESCAPE to quit.",      True, white), [165, 333])
 
-def doNext(message,left,all_sprites_list,block_list,monsta_list,pacman_collide,wall_list,gate):
-  while True:
-      # ALL EVENT PROCESSING SHOULD GO BELOW THIS COMMENT
-      for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-          pygame.quit()
-        if event.type == pygame.KEYDOWN:
-          if event.key == pygame.K_ESCAPE:
-            pygame.quit()
-          if event.key == pygame.K_RETURN:
-            del all_sprites_list
-            del block_list
-            del monsta_list
-            del pacman_collide
-            del wall_list
-            del gate
-            startGame()
+        pygame.display.flip()
+        clock.tick(10)
 
-      #Grey background
-      w = pygame.Surface((400,200))  # the size of your rect
-      w.set_alpha(10)                # alpha level
-      w.fill((128,128,128))           # this fills the entire surface
-      screen.blit(w, (100,200))    # (0,0) are the top-left coordinates
 
-      #Won or lost
-      text1=font.render(message, True, white)
-      screen.blit(text1, [left, 233])
-
-      text2=font.render("To play again, press ENTER.", True, white)
-      screen.blit(text2, [135, 303])
-      text3=font.render("To quit, press ESCAPE.", True, white)
-      screen.blit(text3, [165, 333])
-
-      pygame.display.flip()
-
-      clock.tick(10)
-
+# ── Entry point ───────────────────────────────────────────────────────────────
+# Classic maze + fresh random speeds:
 startGame()
+
+# GA example (uncomment to test):
+# startGame(maze_seed=42, maze_drop_prob=0.15, speed_seed=7)
 
 pygame.quit()
