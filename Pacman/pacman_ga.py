@@ -21,8 +21,15 @@ import random
 import sys
 import math
 import os
-os.environ["SDL_VIDEODRIVER"] = "dummy"   # suppress display by default
-os.environ["SDL_AUDIODRIVER"] = "dummy"
+
+# Pygame reads SDL video/audio settings during initialization. Configure the
+# dummy drivers only for headless GA runs, before importing modules that call
+# pygame.init() or create a display surface. Visual modes must keep the real
+# platform drivers so a window can open.
+VISUAL_MODE = any(arg in sys.argv[1:] for arg in ("--watch", "--play"))
+if not VISUAL_MODE:
+    os.environ["SDL_VIDEODRIVER"] = "dummy"   # suppress display by default
+    os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 import pygame
 
@@ -272,8 +279,6 @@ def run_ga(watch=False):
     pygame.init()
 
     if watch:
-        import os
-        os.environ.pop("SDL_VIDEODRIVER", None)
         screen = pygame.display.set_mode([606, 606])
         pygame.display.set_caption("Pacman GA — watching best genome")
     else:
@@ -327,8 +332,6 @@ def run_ga(watch=False):
 
 def play_genome(genome):
     """Render a single genome visually (call after run_ga)."""
-    import os
-    os.environ.pop("SDL_VIDEODRIVER", None)
     pygame.init()
     pygame.display.set_mode([606, 606])
     pygame.display.set_caption("Pacman GA — playback")
@@ -347,7 +350,6 @@ if __name__ == "__main__":
         # Quick demo: play a random genome visually
         print("Playing a random genome for demonstration…")
         g = random_genome()
-        os.environ.pop("SDL_VIDEODRIVER", None)
         pygame.init()
         pygame.display.set_mode([606, 606])
         simulate(g, render=True)
