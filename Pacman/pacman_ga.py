@@ -21,15 +21,22 @@ import random
 import sys
 import math
 import os
-os.environ["SDL_VIDEODRIVER"] = "dummy"   # suppress display by default
-os.environ["SDL_AUDIODRIVER"] = "dummy"
+
+# Pygame reads SDL video/audio settings during initialization. Configure the
+# dummy drivers only for headless GA runs, before importing modules that call
+# pygame.init() or create a display surface. Visual modes must keep the real
+# platform drivers so a window can open.
+VISUAL_MODE = any(arg in sys.argv[1:] for arg in ("--watch", "--play"))
+if not VISUAL_MODE:
+    os.environ["SDL_VIDEODRIVER"] = "dummy"   # suppress display by default
+    os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 import pygame
 
 # ── Import our modified Pacman module ────────────────────────────────────────
 # We import only the non-display pieces; startGame() is NOT called.
 from pacman_ga_ready import (
-    Wall, Block, Player, Ghost, BlinkyAI,
+    Wall, Block, Player, Ghost, BlinkyAI, RandomGhostAI,
     setup_walls, setup_gate,
     Pinky_directions, Inky_directions, Clyde_directions,
     SPEED_OPTIONS,
@@ -90,9 +97,9 @@ def _make_game(maze_seed, drop_prob, ghost_speed, pac_speed):
     il = len(Inky_directions)  - 1
     cl = len(Clyde_directions) - 1
 
-    Pinky = Ghost(PAC_X,  GHOST_Y, "images/Pinky.png")
-    Inky  = Ghost(INKY_X, GHOST_Y, "images/Inky.png")
-    Clyde = Ghost(CLYDE_X, GHOST_Y, "images/Clyde.png")
+    Pinky = RandomGhostAI(PAC_X,  GHOST_Y, "images/Pinky.png", speed=ghost_speed, rng_seed=maze_seed + 1)
+    Inky  = RandomGhostAI(INKY_X, GHOST_Y, "images/Inky.png",  speed=ghost_speed, rng_seed=maze_seed + 2)
+    Clyde = RandomGhostAI(CLYDE_X, GHOST_Y, "images/Clyde.png", speed=ghost_speed, rng_seed=maze_seed + 3)
 
     monsta_list = pygame.sprite.RenderPlain()
     for g in (Blinky, Pinky, Inky, Clyde):
@@ -178,16 +185,8 @@ def simulate(genome, render=False):
 
             Blinky.update(wall_list, False)
 
-            ret = Pinky.changespeed(sp_pinky, False, p_turn, p_steps, pl)
-            p_turn, p_steps = ret
             Pinky.update(wall_list, False)
-
-            ret = Inky.changespeed(sp_inky, False, i_turn, i_steps, il)
-            i_turn, i_steps = ret
             Inky.update(wall_list, False)
-
-            ret = Clyde.changespeed(sp_clyde, "clyde", c_turn, c_steps, cl)
-            c_turn, c_steps = ret
             Clyde.update(wall_list, False)
 
             hits = pygame.sprite.spritecollide(Pacman, block_list, True)
@@ -280,8 +279,6 @@ def run_ga(watch=False):
     pygame.init()
 
     if watch:
-        import os
-        os.environ.pop("SDL_VIDEODRIVER", None)
         screen = pygame.display.set_mode([606, 606])
         pygame.display.set_caption("Pacman GA — watching best genome")
     else:
@@ -335,8 +332,6 @@ def run_ga(watch=False):
 
 def play_genome(genome):
     """Render a single genome visually (call after run_ga)."""
-    import os
-    os.environ.pop("SDL_VIDEODRIVER", None)
     pygame.init()
     pygame.display.set_mode([606, 606])
     pygame.display.set_caption("Pacman GA — playback")
@@ -355,7 +350,6 @@ if __name__ == "__main__":
         # Quick demo: play a random genome visually
         print("Playing a random genome for demonstration…")
         g = random_genome()
-        os.environ.pop("SDL_VIDEODRIVER", None)
         pygame.init()
         pygame.display.set_mode([606, 606])
         simulate(g, render=True)

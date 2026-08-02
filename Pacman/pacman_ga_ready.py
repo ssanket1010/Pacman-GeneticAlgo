@@ -166,7 +166,7 @@ class Player(pygame.sprite.Sprite):
                 self.rect.top  = old_y
 
 
-# ── Ghost base (scripted path — Pinky, Inky, Clyde) ──────────────────────────
+# ── Ghost base (scripted path — retained for compatibility) ────────────────
 class Ghost(Player):
     """Scripted ghost: follows a predefined direction list."""
 
@@ -190,6 +190,76 @@ class Ghost(Player):
             return [turn, steps]
         except IndexError:
             return [0, 0]
+
+
+class RandomGhostAI(Player):
+    """Ghost that leaves the middle square, then roams randomly."""
+
+    DIRECTIONS = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+    HOUSE_EXIT_X = 287
+    HOUSE_EXIT_Y = 210
+
+    def __init__(self, x, y, filename, speed, rng_seed=None):
+        super().__init__(x, y, filename)
+        self.speed = speed
+        self._rng = random.Random(rng_seed)
+        self.direction_ttl = 0
+        self.has_left_house = False
+        self._pick_random_direction()
+
+    def _pick_random_direction(self):
+        dx, dy = self._rng.choice(self.DIRECTIONS)
+        self.change_x = dx * self.speed
+        self.change_y = dy * self.speed
+        self.direction_ttl = self._rng.randint(5, 20)
+
+    def _can_move(self, walls, dx, dy):
+        old_x, old_y = self.rect.left, self.rect.top
+        self.rect.left += dx
+        self.rect.top += dy
+        blocked = pygame.sprite.spritecollide(self, walls, False)
+        self.rect.left, self.rect.top = old_x, old_y
+        return not blocked
+
+    def _move_toward_exit(self, walls):
+        if abs(self.rect.left - self.HOUSE_EXIT_X) > 1:
+            step = min(self.speed, abs(self.rect.left - self.HOUSE_EXIT_X))
+            dx = step if self.rect.left < self.HOUSE_EXIT_X else -step
+            if self._can_move(walls, dx, 0):
+                self.rect.left += dx
+                return
+
+        step = min(self.speed, abs(self.rect.top - self.HOUSE_EXIT_Y))
+        dy = -step if self.rect.top > self.HOUSE_EXIT_Y else step
+        if step and self._can_move(walls, 0, dy):
+            self.rect.top += dy
+            return
+
+        self.has_left_house = True
+        self._pick_random_direction()
+
+    def update(self, walls, gate):
+        if not self.has_left_house:
+            self._move_toward_exit(walls)
+            return
+
+        old_x, old_y = self.rect.left, self.rect.top
+
+        self.rect.left += self.change_x
+        if pygame.sprite.spritecollide(self, walls, False):
+            self.rect.left = old_x
+            self._pick_random_direction()
+            return
+
+        self.rect.top += self.change_y
+        if pygame.sprite.spritecollide(self, walls, False):
+            self.rect.top = old_y
+            self._pick_random_direction()
+            return
+
+        self.direction_ttl -= 1
+        if self.direction_ttl <= 0:
+            self._pick_random_direction()
 
 
 # ── Blinky: free-roaming AI ghost (NO hardcoded path) ────────────────────────
@@ -358,9 +428,9 @@ def startGame(maze_seed=None, maze_drop_prob=0.0, speed_seed=None):
             scaled.append([int(d[0] * factor), int(d[1] * factor), d[2]])
         return scaled
 
-    Pinky = Ghost(w,   m_h, "images/Pinky.png")
-    Inky  = Ghost(i_w, m_h, "images/Inky.png")
-    Clyde = Ghost(c_w, m_h, "images/Clyde.png")
+    Pinky = RandomGhostAI(w,   m_h, "images/Pinky.png", speed=ghost_speed, rng_seed=speed_rng.randint(0, 9999))
+    Inky  = RandomGhostAI(i_w, m_h, "images/Inky.png",  speed=ghost_speed, rng_seed=speed_rng.randint(0, 9999))
+    Clyde = RandomGhostAI(c_w, m_h, "images/Clyde.png", speed=ghost_speed, rng_seed=speed_rng.randint(0, 9999))
     for g in (Pinky, Inky, Clyde):
         monsta_list.add(g)
         all_sprites_list.add(g)
@@ -412,17 +482,9 @@ def startGame(maze_seed=None, maze_drop_prob=0.0, speed_seed=None):
         # GA hook: insert  Blinky.set_genome_speed(dx, dy)  here per tick
         Blinky.update(wall_list, False)
 
-        # Scripted ghosts
-        returned = Pinky.changespeed(scaled_pinky, False, p_turn, p_steps, pl)
-        p_turn, p_steps = returned
+        # Pinky, Inky, and Clyde leave the middle square first, then roam.
         Pinky.update(wall_list, False)
-
-        returned = Inky.changespeed(scaled_inky, False, i_turn, i_steps, il)
-        i_turn, i_steps = returned
         Inky.update(wall_list, False)
-
-        returned = Clyde.changespeed(scaled_clyde, "clyde", c_turn, c_steps, cl)
-        c_turn, c_steps = returned
         Clyde.update(wall_list, False)
 
         # Pellet collection
@@ -493,10 +555,11 @@ def doNext(message, left,
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
-# Classic maze + fresh random speeds:
-startGame()
+if __name__ == "__main__":
+    # Classic maze + fresh random speeds:
+    startGame()
 
-# GA example (uncomment to test):
-# startGame(maze_seed=42, maze_drop_prob=0.15, speed_seed=7)
+    # GA example (uncomment to test):
+    # startGame(maze_seed=42, maze_drop_prob=0.15, speed_seed=7)
 
-pygame.quit()
+    pygame.quit()
