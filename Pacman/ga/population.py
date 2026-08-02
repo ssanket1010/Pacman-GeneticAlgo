@@ -1,5 +1,12 @@
-from chromosome import Chromosome
+"""Population helpers for the Pacman genetic algorithm."""
 
-POPULATION_SIZE = 50
+from .config import POP_SIZE
+from .evolution import random_genome
 
-population = [Chromosome() for _ in range(POPULATION_SIZE)]
+
+def create_population(size=POP_SIZE):
+    """Create a population of list-based genomes for the active GA."""
+    return [random_genome() for _ in range(size)]
+
+
+population = create_population()
