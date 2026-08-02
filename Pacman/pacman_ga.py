@@ -29,7 +29,7 @@ import pygame
 # ── Import our modified Pacman module ────────────────────────────────────────
 # We import only the non-display pieces; startGame() is NOT called.
 from pacman_ga_ready import (
-    Wall, Block, Player, Ghost, BlinkyAI,
+    Wall, Block, Player, Ghost, BlinkyAI, RandomGhostAI,
     setup_walls, setup_gate,
     Pinky_directions, Inky_directions, Clyde_directions,
     SPEED_OPTIONS,
@@ -90,9 +90,9 @@ def _make_game(maze_seed, drop_prob, ghost_speed, pac_speed):
     il = len(Inky_directions)  - 1
     cl = len(Clyde_directions) - 1
 
-    Pinky = Ghost(PAC_X,  GHOST_Y, "images/Pinky.png")
-    Inky  = Ghost(INKY_X, GHOST_Y, "images/Inky.png")
-    Clyde = Ghost(CLYDE_X, GHOST_Y, "images/Clyde.png")
+    Pinky = RandomGhostAI(PAC_X,  GHOST_Y, "images/Pinky.png", speed=ghost_speed, rng_seed=maze_seed + 1)
+    Inky  = RandomGhostAI(INKY_X, GHOST_Y, "images/Inky.png",  speed=ghost_speed, rng_seed=maze_seed + 2)
+    Clyde = RandomGhostAI(CLYDE_X, GHOST_Y, "images/Clyde.png", speed=ghost_speed, rng_seed=maze_seed + 3)
 
     monsta_list = pygame.sprite.RenderPlain()
     for g in (Blinky, Pinky, Inky, Clyde):
@@ -178,16 +178,8 @@ def simulate(genome, render=False):
 
             Blinky.update(wall_list, False)
 
-            ret = Pinky.changespeed(sp_pinky, False, p_turn, p_steps, pl)
-            p_turn, p_steps = ret
             Pinky.update(wall_list, False)
-
-            ret = Inky.changespeed(sp_inky, False, i_turn, i_steps, il)
-            i_turn, i_steps = ret
             Inky.update(wall_list, False)
-
-            ret = Clyde.changespeed(sp_clyde, "clyde", c_turn, c_steps, cl)
-            c_turn, c_steps = ret
             Clyde.update(wall_list, False)
 
             hits = pygame.sprite.spritecollide(Pacman, block_list, True)
