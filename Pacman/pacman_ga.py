@@ -17,10 +17,13 @@ Genome encoding  (one list per individual):
     drop_prob   : float 0.0..0.4  (fraction of interior walls removed)
 """
 
+import argparse
+import json
 import random
 import sys
 import math
 import os
+from pathlib import Path
 
 # Pygame reads SDL video/audio settings during initialization. Configure the
 # dummy drivers only for headless GA runs, before importing modules that call
@@ -53,6 +56,7 @@ ELITE_K         = 4         # top-K elites copied unchanged each generation
 TOURNAMENT_K    = 5         # tournament size for parent selection
 MUTATION_RATE   = 0.03      # probability of flipping any single move gene
 TICKS_PER_STEP  = 1         # game ticks between move changes (keep at 1 headless)
+LINEAGE_PATH    = Path("outputs/ga_lineage.json")
 
 MOVES           = [0, 1, 2, 3]   # UP DOWN LEFT RIGHT
 MOVE_DELTAS     = {               # (dx, dy) at speed S
@@ -265,9 +269,26 @@ def mutate(genome, rate=MUTATION_RATE):
     return g
 
 
-def tournament_select(population, fitnesses, k=TOURNAMENT_K):
+def count_gene_changes(before, after):
+    """Return how many genes differ between two genomes."""
+    return sum(1 for old, new in zip(before, after) if old != new)
+
+
+def write_lineage(records, path=LINEAGE_PATH):
+    """Persist lineage records for visualization tools."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump({"records": records}, handle, indent=2)
+    return path
+
+
+def tournament_select_index(population, fitnesses, k=TOURNAMENT_K):
     contestants = random.sample(range(len(population)), k)
-    best = max(contestants, key=lambda i: fitnesses[i])
+    return max(contestants, key=lambda i: fitnesses[i])
+
+
+def tournament_select(population, fitnesses, k=TOURNAMENT_K):
+    best = tournament_select_index(population, fitnesses, k)
     return population[best]
 
 
@@ -275,7 +296,7 @@ def tournament_select(population, fitnesses, k=TOURNAMENT_K):
 # Main GA loop
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_ga(watch=False):
+def run_ga(watch=False, save_lineage=False):
     pygame.init()
 
     if watch:
@@ -285,15 +306,31 @@ def run_ga(watch=False):
         pygame.display.set_mode([1, 1])   # minimal surface, no window
 
     population = [random_genome() for _ in range(POP_SIZE)]
+    genome_ids = [f"g0_{idx}" for idx in range(POP_SIZE)]
+    lineage_records = []
+    lineage_by_id = {}
+    for idx, genome_id in enumerate(genome_ids):
+        record = {
+            "generation": 0,
+            "genome_id": genome_id,
+            "parent_ids": [],
+            "operation": "initial",
+            "mutation_count": 0,
+            "fitness": None,
+        }
+        lineage_records.append(record)
+        lineage_by_id[genome_id] = record
     best_ever_genome   = None
     best_ever_fitness  = -math.inf
 
     for gen in range(1, N_GENERATIONS + 1):
         # ── Evaluate ──────────────────────────────────────────────────────────
         fitnesses = [simulate(g) for g in population]
+        for genome_id, fitness in zip(genome_ids, fitnesses):
+            lineage_by_id[genome_id]["fitness"] = fitness
 
-        ranked = sorted(zip(fitnesses, population), key=lambda x: x[0], reverse=True)
-        gen_best_f, gen_best_g = ranked[0]
+        ranked = sorted(zip(fitnesses, population, genome_ids), key=lambda x: x[0], reverse=True)
+        gen_best_f, gen_best_g, _ = ranked[0]
 
         if gen_best_f > best_ever_fitness:
             best_ever_fitness = gen_best_f
@@ -309,16 +346,50 @@ def run_ga(watch=False):
             simulate(gen_best_g, render=True)
 
         # ── Next generation ───────────────────────────────────────────────────
-        new_pop = [g for _, g in ranked[:ELITE_K]]   # elites pass through
+        new_pop = []
+        new_ids = []
+
+        for elite_slot, (elite_fitness, elite_genome, elite_id) in enumerate(ranked[:ELITE_K]):
+            child_id = f"g{gen}_{elite_slot}"
+            new_pop.append(elite_genome)
+            new_ids.append(child_id)
+            record = {
+                "generation": gen,
+                "genome_id": child_id,
+                "parent_ids": [elite_id],
+                "operation": "elite",
+                "mutation_count": 0,
+                "fitness": elite_fitness,
+            }
+            lineage_records.append(record)
+            lineage_by_id[child_id] = record
 
         while len(new_pop) < POP_SIZE:
-            p1 = tournament_select(population, fitnesses)
-            p2 = tournament_select(population, fitnesses)
+            child_slot = len(new_pop)
+            p1_idx = tournament_select_index(population, fitnesses)
+            p2_idx = tournament_select_index(population, fitnesses)
+            p1 = population[p1_idx]
+            p2 = population[p2_idx]
             child = crossover(p1, p2)
+            before_mutation = child[:]
             child = mutate(child)
+            child_id = f"g{gen}_{child_slot}"
+            mutation_count = count_gene_changes(before_mutation, child)
             new_pop.append(child)
+            new_ids.append(child_id)
+            record = {
+                "generation": gen,
+                "genome_id": child_id,
+                "parent_ids": [genome_ids[p1_idx], genome_ids[p2_idx]],
+                "operation": "selection/crossover",
+                "mutation_count": mutation_count,
+                "fitness": None,
+            }
+            lineage_records.append(record)
+            lineage_by_id[child_id] = record
 
         population = new_pop
+        genome_ids = new_ids
 
     print("\n── GA complete ──")
     print(f"Best fitness : {best_ever_fitness:.2f}")
@@ -327,6 +398,9 @@ def run_ga(watch=False):
     drop_prob   = min(0.4, best_ever_genome[SEQ_LEN + 2] / 100.0)
     print(f"Best genome  : blinky_speed={blinky_spd}  maze_seed={maze_seed}  drop_prob={drop_prob:.2f}")
     print(f"Move preview : {best_ever_genome[:20]}…")
+    if save_lineage:
+        saved_path = write_lineage(lineage_records)
+        print(f"Lineage JSON : {saved_path}")
     return best_ever_genome, best_ever_fitness
 
 
@@ -344,9 +418,13 @@ def play_genome(genome):
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    args = sys.argv[1:]
+    parser = argparse.ArgumentParser(description="Run the Pacman genetic algorithm.")
+    parser.add_argument("--watch", action="store_true", help="render the best genome from each generation")
+    parser.add_argument("--play", metavar="INDEX", nargs="?", const="random", help="play a random genome visually for demonstration")
+    parser.add_argument("--save-lineage-tree", action="store_true", help="save outputs/ga_lineage.json and render outputs/lineage_tree.svg after training")
+    args = parser.parse_args()
 
-    if "--play" in args:
+    if args.play is not None:
         # Quick demo: play a random genome visually
         print("Playing a random genome for demonstration…")
         g = random_genome()
@@ -355,13 +433,22 @@ if __name__ == "__main__":
         simulate(g, render=True)
         pygame.quit()
 
-    elif "--watch" in args:
-        best_g, best_f = run_ga(watch=True)
+    elif args.watch:
+        best_g, best_f = run_ga(watch=True, save_lineage=args.save_lineage_tree)
+        if args.save_lineage_tree:
+            from ga_visualization import render_lineage_tree
+            tree_path = render_lineage_tree(LINEAGE_PATH)
+            print(f"Lineage tree : {tree_path}")
         print("\nReplaying best genome…")
         play_genome(best_g)
 
     else:
-        best_g, best_f = run_ga(watch=False)
-        ans = input("\nPlay back the best genome? [y/N] ").strip().lower()
-        if ans == "y":
-            play_genome(best_g)
+        best_g, best_f = run_ga(watch=False, save_lineage=args.save_lineage_tree)
+        if args.save_lineage_tree:
+            from ga_visualization import render_lineage_tree
+            tree_path = render_lineage_tree(LINEAGE_PATH)
+            print(f"Lineage tree : {tree_path}")
+        if sys.stdin.isatty():
+            ans = input("\nPlay back the best genome? [y/N] ").strip().lower()
+            if ans == "y":
+                play_genome(best_g)
