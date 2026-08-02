@@ -17,7 +17,6 @@ Genome encoding  (one list per individual):
     drop_prob   : float 0.0..0.4  (fraction of interior walls removed)
 """
 
-import random
 import sys
 import math
 import os
@@ -39,35 +38,17 @@ from pacman_ga_ready import (
     Wall, Block, Player, Ghost, BlinkyAI, RandomGhostAI,
     setup_walls, setup_gate,
     Pinky_directions, Inky_directions, Clyde_directions,
-    SPEED_OPTIONS,
     w as PAC_X, p_h as PAC_Y,
     m_h as GHOST_Y, b_h as BLINKY_Y,
     i_w as INKY_X, c_w as CLYDE_X,
 )
 
-# ── GA hyper-parameters ──────────────────────────────────────────────────────
-POP_SIZE        = 40        # individuals per generation
-SEQ_LEN         = 200       # number of move steps per genome
-N_GENERATIONS   = 30        # generations to run
-ELITE_K         = 4         # top-K elites copied unchanged each generation
-TOURNAMENT_K    = 5         # tournament size for parent selection
-MUTATION_RATE   = 0.03      # probability of flipping any single move gene
-TICKS_PER_STEP  = 1         # game ticks between move changes (keep at 1 headless)
-
-MOVES           = [0, 1, 2, 3]   # UP DOWN LEFT RIGHT
-MOVE_DELTAS     = {               # (dx, dy) at speed S
-    0: (0, -1),
-    1: (0,  1),
-    2: (-1, 0),
-    3:  (1, 0),
-}
-
-# ── Fitness weights ───────────────────────────────────────────────────────────
-W_PELLET        = 10.0   # reward per pellet eaten
-W_SURVIVAL      = 0.05   # reward per tick alive (encourages exploration)
-W_DEATH_PENALTY = 50.0   # subtracted if Pacman is caught before all pellets gone
-W_WIN_BONUS     = 500.0  # bonus for eating every pellet
-
+from ga.config import (
+    ELITE_K, MOVE_DELTAS, N_GENERATIONS, POP_SIZE, SEQ_LEN, SPEED_OPTIONS,
+    TICKS_PER_STEP,
+)
+from ga.evolution import crossover, mutate, random_genome, tournament_select
+from ga.fitness import calculate_fitness
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Headless game simulation
@@ -218,57 +199,7 @@ def simulate(genome, render=False):
                     pygame.quit(); sys.exit()
 
     # ── Fitness ───────────────────────────────────────────────────────────────
-    fitness = score * W_PELLET + ticks_alive * W_SURVIVAL
-    if dead:
-        fitness -= W_DEATH_PENALTY
-    if won:
-        fitness += W_WIN_BONUS
-
-    return fitness
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Genome helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-GENOME_LEN = SEQ_LEN + 3   # moves + blinky_speed_idx + maze_seed + drop_prob_raw
-
-def random_genome():
-    moves = [random.choice(MOVES) for _ in range(SEQ_LEN)]
-    blinky_idx = random.randint(0, len(SPEED_OPTIONS) - 1)
-    maze_seed  = random.randint(0, 9999)
-    drop_raw   = random.randint(0, 40)   # 0..40 → 0.0..0.40 after /100
-    return moves + [blinky_idx, maze_seed, drop_raw]
-
-
-def crossover(p1, p2):
-    """Single-point crossover on the move segment; tail genes averaged."""
-    cut = random.randint(1, SEQ_LEN - 1)
-    child_moves = p1[:cut] + p2[cut:SEQ_LEN]
-    # Tail: randomly inherit from one parent
-    child_tail  = [random.choice([p1[i], p2[i]]) for i in range(SEQ_LEN, GENOME_LEN)]
-    return child_moves + child_tail
-
-
-def mutate(genome, rate=MUTATION_RATE):
-    g = genome[:]
-    for i in range(SEQ_LEN):
-        if random.random() < rate:
-            g[i] = random.choice(MOVES)
-    # Occasionally mutate tail parameters
-    if random.random() < 0.1:
-        g[SEQ_LEN] = random.randint(0, len(SPEED_OPTIONS) - 1)
-    if random.random() < 0.05:
-        g[SEQ_LEN + 1] = random.randint(0, 9999)
-    if random.random() < 0.1:
-        g[SEQ_LEN + 2] = max(0, min(40, g[SEQ_LEN + 2] + random.randint(-5, 5)))
-    return g
-
-
-def tournament_select(population, fitnesses, k=TOURNAMENT_K):
-    contestants = random.sample(range(len(population)), k)
-    best = max(contestants, key=lambda i: fitnesses[i])
-    return population[best]
+    return calculate_fitness(score, ticks_alive, dead=dead, won=won)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
