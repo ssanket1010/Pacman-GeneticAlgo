@@ -2,7 +2,7 @@
 
 # GA hyper-parameters
 POP_SIZE = 40        # individuals per generation
-SEQ_LEN = 200        # number of move steps per genome
+SEQ_LEN = 200        # number of move genes per genome; repeated until the game ends
 N_GENERATIONS = 30   # generations to run
 ELITE_K = 4          # top-K elites copied unchanged each generation
 TOURNAMENT_K = 5     # tournament size for parent selection
@@ -12,7 +12,7 @@ TICKS_PER_STEP = 1   # game ticks between move changes (keep at 1 headless)
 # Genome encoding
 SPEED_OPTIONS = [15, 20, 25, 30] # pixel increments per tick
 MOVES = [0, 1, 2, 3] # UP DOWN LEFT RIGHT
-GENOME_LEN = SEQ_LEN + 3 # moves + blinky_speed_idx + maze_seed + drop_prob_raw
+GENOME_LEN = SEQ_LEN + 3 # move policy + blinky_speed_idx + maze_seed + drop_prob_raw
 
 # Movement lookup: (dx, dy) multiplied by Pacman's speed.
 MOVE_DELTAS = {
