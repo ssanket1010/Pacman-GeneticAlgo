@@ -11,7 +11,7 @@ Run:
 Genome encoding  (one list per individual):
     [move_0, move_1, ..., move_{SEQ_LEN-1}, blinky_speed, maze_seed, drop_prob]
 
-    move_i      : int  0=UP 1=DOWN 2=LEFT 3=RIGHT
+    move_i      : int  0=UP 1=DOWN 2=LEFT 3=RIGHT; repeated until Pacman wins or is caught
     blinky_speed: int  chosen from SPEED_OPTIONS
     maze_seed   : int  0..9999
     drop_prob   : float 0.0..0.4  (fraction of interior walls removed)
@@ -20,6 +20,7 @@ Genome encoding  (one list per individual):
 import sys
 import math
 import os
+from itertools import cycle
 
 import pygame
 
@@ -35,8 +36,8 @@ from pacman_ga_ready import (
 )
 
 from ga.config import (
-    ELITE_K, MOVE_DELTAS, N_GENERATIONS, POP_SIZE, SEQ_LEN, SPEED_OPTIONS,
-    TICKS_PER_STEP,
+    ELITE_K, MAX_STEPS_WITHOUT_PELLET, MOVE_DELTAS, N_GENERATIONS, POP_SIZE,
+    SEQ_LEN, SPEED_OPTIONS, TICKS_PER_STEP,
 )
 from ga.evolution import crossover, mutate, random_genome, tournament_select
 from ga.fitness import calculate_fitness
@@ -116,6 +117,11 @@ def simulate(genome, render=False):
     """
     Run one genome through the game and return its fitness score.
 
+    The genome stores a fixed-length movement policy, but simulation no longer
+    stops when those 200 genes are exhausted. Instead, the policy repeats until
+    Pacman eats every pellet, is caught by a ghost, or stops making pellet
+    progress long enough to be treated as a failed run.
+
     genome layout: [move_0..move_{SEQ_LEN-1}, blinky_speed_idx, maze_seed, drop_prob_raw]
     """
     moves       = genome[:SEQ_LEN]
@@ -136,16 +142,15 @@ def simulate(genome, render=False):
 
     score       = 0
     ticks_alive = 0
+    steps_without_pellet = 0
     dead        = False
     won         = False
 
     p_turn = b_turn = i_turn = c_turn = 0
     p_steps = b_steps = i_steps = c_steps = 0
 
-    # Apply move sequence
-    for step_idx, move in enumerate(moves):
-        if dead or won:
-            break
+    # Repeat the learned move policy until the game reaches a terminal state.
+    for step_idx, move in enumerate(cycle(moves)):
 
         dx, dy = MOVE_DELTAS[move]
         # Reset velocity, apply genome direction
@@ -162,8 +167,14 @@ def simulate(genome, render=False):
             Clyde.update(wall_list, False)
 
             hits = pygame.sprite.spritecollide(Pacman, block_list, True)
-            score += len(hits)
+            pellets_eaten = len(hits)
+            score += pellets_eaten
             ticks_alive += 1
+
+            if pellets_eaten:
+                steps_without_pellet = 0
+            else:
+                steps_without_pellet += 1
 
             if pygame.sprite.spritecollide(Pacman, monsta_list, False):
                 dead = True
@@ -173,6 +184,13 @@ def simulate(genome, render=False):
                 won = True
                 break
 
+            if steps_without_pellet >= MAX_STEPS_WITHOUT_PELLET:
+                dead = True
+                break
+
+        if dead or won:
+            break
+
         if render and pygame.display.get_surface():
             screen.fill((0, 0, 0))
             wall_list.draw(screen)
@@ -181,7 +199,10 @@ def simulate(genome, render=False):
             monsta_list.draw(screen)
             Pacman.draw(screen) if hasattr(Pacman, 'draw') else None
             pygame.sprite.RenderPlain(Pacman).draw(screen)
-            txt = font.render(f"Step {step_idx+1}/{SEQ_LEN}  Score {score}/{total}", True, (255,0,0))
+            txt = font.render(
+                f"Step {step_idx+1}  Score {score}/{total}  No pellet {steps_without_pellet}/{MAX_STEPS_WITHOUT_PELLET}",
+                True, (255,0,0),
+            )
             screen.blit(txt, [10, 10])
             pygame.display.flip()
             clock.tick(15)
