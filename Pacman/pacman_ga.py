@@ -11,7 +11,7 @@ Run:
 Genome encoding  (one list per individual):
     [move_0, move_1, ..., move_{SEQ_LEN-1}, blinky_speed, maze_seed, drop_prob]
 
-    move_i      : int  0=UP 1=DOWN 2=LEFT 3=RIGHT
+    move_i      : int  0=UP 1=DOWN 2=LEFT 3=RIGHT; repeated until Pacman wins or is caught
     blinky_speed: int  chosen from SPEED_OPTIONS
     maze_seed   : int  0..9999
     drop_prob   : float 0.0..0.4  (fraction of interior walls removed)
@@ -20,6 +20,7 @@ Genome encoding  (one list per individual):
 import sys
 import math
 import os
+from itertools import cycle
 
 import pygame
 
@@ -116,6 +117,10 @@ def simulate(genome, render=False):
     """
     Run one genome through the game and return its fitness score.
 
+    The genome stores a fixed-length movement policy, but simulation no longer
+    stops when those 200 genes are exhausted. Instead, the policy repeats until
+    Pacman eats every pellet or is caught by a ghost.
+
     genome layout: [move_0..move_{SEQ_LEN-1}, blinky_speed_idx, maze_seed, drop_prob_raw]
     """
     moves       = genome[:SEQ_LEN]
@@ -142,10 +147,8 @@ def simulate(genome, render=False):
     p_turn = b_turn = i_turn = c_turn = 0
     p_steps = b_steps = i_steps = c_steps = 0
 
-    # Apply move sequence
-    for step_idx, move in enumerate(moves):
-        if dead or won:
-            break
+    # Repeat the learned move policy until the game reaches a terminal state.
+    for step_idx, move in enumerate(cycle(moves)):
 
         dx, dy = MOVE_DELTAS[move]
         # Reset velocity, apply genome direction
@@ -173,6 +176,9 @@ def simulate(genome, render=False):
                 won = True
                 break
 
+        if dead or won:
+            break
+
         if render and pygame.display.get_surface():
             screen.fill((0, 0, 0))
             wall_list.draw(screen)
@@ -181,7 +187,7 @@ def simulate(genome, render=False):
             monsta_list.draw(screen)
             Pacman.draw(screen) if hasattr(Pacman, 'draw') else None
             pygame.sprite.RenderPlain(Pacman).draw(screen)
-            txt = font.render(f"Step {step_idx+1}/{SEQ_LEN}  Score {score}/{total}", True, (255,0,0))
+            txt = font.render(f"Step {step_idx+1}  Score {score}/{total}", True, (255,0,0))
             screen.blit(txt, [10, 10])
             pygame.display.flip()
             clock.tick(15)
