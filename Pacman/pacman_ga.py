@@ -20,8 +20,6 @@ Genome encoding  (one list per individual):
 import sys
 import math
 import os
-os.environ["SDL_VIDEODRIVER"] = "dummy"   # suppress display by default
-os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 import pygame
 
