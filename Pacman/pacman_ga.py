@@ -119,8 +119,7 @@ def simulate(genome, render=False):
 
     The genome stores a fixed-length movement policy, but simulation no longer
     stops when those 200 genes are exhausted. Instead, the policy repeats until
-    Pacman eats every pellet, is caught by a ghost, or stops making pellet
-    progress long enough to be treated as a failed run.
+    Pacman eats every pellet or is caught by a ghost.
 
     genome layout: [move_0..move_{SEQ_LEN-1}, blinky_speed_idx, maze_seed, drop_prob_raw]
     """
@@ -184,10 +183,6 @@ def simulate(genome, render=False):
                 won = True
                 break
 
-            if steps_without_pellet >= MAX_STEPS_WITHOUT_PELLET:
-                dead = True
-                break
-
         if dead or won:
             break
 
@@ -199,10 +194,7 @@ def simulate(genome, render=False):
             monsta_list.draw(screen)
             Pacman.draw(screen) if hasattr(Pacman, 'draw') else None
             pygame.sprite.RenderPlain(Pacman).draw(screen)
-            txt = font.render(
-                f"Step {step_idx+1}  Score {score}/{total}  No pellet {steps_without_pellet}/{MAX_STEPS_WITHOUT_PELLET}",
-                True, (255,0,0),
-            )
+            txt = font.render(f"Step {step_idx+1}  Score {score}/{total}", True, (255,0,0))
             screen.blit(txt, [10, 10])
             pygame.display.flip()
             clock.tick(15)
