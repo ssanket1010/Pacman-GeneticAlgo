@@ -8,6 +8,7 @@ ELITE_K = 4          # top-K elites copied unchanged each generation
 TOURNAMENT_K = 5     # tournament size for parent selection
 MUTATION_RATE = 0.03 # probability of flipping any single move gene
 TICKS_PER_STEP = 1   # game ticks between move changes (keep at 1 headless)
+MAX_STEPS_WITHOUT_PELLET = 1000 # end stuck policies so training/playback cannot hang forever
 
 # Genome encoding
 SPEED_OPTIONS = [15, 20, 25, 30] # pixel increments per tick

@@ -36,8 +36,8 @@ from pacman_ga_ready import (
 )
 
 from ga.config import (
-    ELITE_K, MOVE_DELTAS, N_GENERATIONS, POP_SIZE, SEQ_LEN, SPEED_OPTIONS,
-    TICKS_PER_STEP,
+    ELITE_K, MAX_STEPS_WITHOUT_PELLET, MOVE_DELTAS, N_GENERATIONS, POP_SIZE,
+    SEQ_LEN, SPEED_OPTIONS, TICKS_PER_STEP,
 )
 from ga.evolution import crossover, mutate, random_genome, tournament_select
 from ga.fitness import calculate_fitness
@@ -141,6 +141,7 @@ def simulate(genome, render=False):
 
     score       = 0
     ticks_alive = 0
+    steps_without_pellet = 0
     dead        = False
     won         = False
 
@@ -165,8 +166,14 @@ def simulate(genome, render=False):
             Clyde.update(wall_list, False)
 
             hits = pygame.sprite.spritecollide(Pacman, block_list, True)
-            score += len(hits)
+            pellets_eaten = len(hits)
+            score += pellets_eaten
             ticks_alive += 1
+
+            if pellets_eaten:
+                steps_without_pellet = 0
+            else:
+                steps_without_pellet += 1
 
             if pygame.sprite.spritecollide(Pacman, monsta_list, False):
                 dead = True
